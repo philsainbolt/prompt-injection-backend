@@ -9,8 +9,9 @@ function getProgress() {
   let currentLevel = 1;
 
   for (const challenge of challenges) {
-    if (!state.beaten.has(challenge.id)) {
-      currentLevel = challenge.id;
+    const level = challenge.level || challenge.id;
+    if (!state.beaten.has(level)) {
+      currentLevel = level;
       return { beaten, currentLevel };
     }
   }

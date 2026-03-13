@@ -7,7 +7,7 @@ function getProgressHandler(req, res) {
 
 function beatChallengeHandler(req, res) {
   const id = Number(req.params.id);
-  const exists = challenges.some((challenge) => challenge.id === id);
+  const exists = challenges.some((challenge) => (challenge.level || challenge.id) === id);
 
   if (!exists) {
     return res.status(404).json({ error: 'Challenge not found' });

@@ -4,7 +4,7 @@ const { containsSecretPassword } = require('../utils/passwordDetection');
 
 class ChallengeController {
   static getAllChallenges(req, res) {
-    res.json(challenges.map(({ secret_password, ...rest }) => rest));
+    res.json(challenges.map(({ secretPassword, secret_password, ...rest }) => rest));
   }
 
   static getChallengeById(req, res) {
@@ -15,26 +15,30 @@ class ChallengeController {
       return res.status(404).json({ error: 'Challenge not found' });
     }
 
-    const { secret_password, ...safeChallenge } = challenge;
+    const { secretPassword, secret_password, ...safeChallenge } = challenge;
     return res.json(safeChallenge);
   }
 
   static async submitAttempt(req, res, next) {
     try {
       const id = Number(req.params.id);
-      const { prompt } = req.body;
+      const { prompt, userPrompt } = req.body;
+      const normalizedPrompt = userPrompt || prompt;
       const challenge = challenges.find((item) => item.id === id);
 
       if (!challenge) {
         return res.status(404).json({ error: 'Challenge not found' });
       }
 
-      if (!prompt || typeof prompt !== 'string') {
-        return res.status(400).json({ error: 'prompt is required' });
+      if (!normalizedPrompt || typeof normalizedPrompt !== 'string') {
+        return res.status(400).json({ error: 'prompt or userPrompt is required' });
       }
 
-      const llmResponse = await generateResponse(challenge.system_prompt, prompt);
-      const success = containsSecretPassword(llmResponse, challenge.secret_password);
+      const systemPrompt = challenge.systemPrompt || challenge.system_prompt;
+      const secretPassword = challenge.secretPassword || challenge.secret_password;
+
+      const llmResponse = await generateResponse(systemPrompt, normalizedPrompt);
+      const success = containsSecretPassword(llmResponse, secretPassword);
 
       return res.json({
         success,
