@@ -28,7 +28,7 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: 0,
-    max: 5,
+    max: 10,
   },
   hintsUsed: {
     type: Number,
@@ -36,19 +36,11 @@ const userSchema = new mongoose.Schema({
     min: 0,
     max: 3,
   },
-
-  // Legacy fields retained to avoid breaking existing code paths
-  completedChallenges: [
-    {
-      challengeId: mongoose.Schema.Types.ObjectId,
-      completedAt: Date,
-    },
-  ],
-  score: {
-    type: Number,
-    default: 0,
+  beatenLevels: {
+    type: [Number],
+    default: [],
   },
-}, { timestamps: true });
+}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ username: 1 }, { unique: true });

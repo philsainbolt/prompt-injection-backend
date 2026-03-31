@@ -1,7 +1,6 @@
 const request = require('supertest');
 const app = require('../src/server');
-const { resetUsers } = require('../src/store/userStore');
-const { resetStore } = require('../src/store/gameStore');
+const { connectDB, clearDB, closeDB } = require('./helpers/dbSetup');
 
 async function authHeader() {
   await request(app).post('/api/auth/register').send({
@@ -19,10 +18,9 @@ async function authHeader() {
 }
 
 describe('Progress endpoints', () => {
-  beforeEach(() => {
-    resetUsers();
-    resetStore();
-  });
+  beforeAll(connectDB);
+  afterEach(clearDB);
+  afterAll(closeDB);
 
   it('GET /api/progress returns initial state', async () => {
     const headers = await authHeader();

@@ -5,7 +5,7 @@ const challengeSchema = new mongoose.Schema({
   level: {
     type: Number,
     min: 1,
-    max: 5,
+    max: 10,
   },
   title: {
     type: String,
@@ -48,18 +48,10 @@ const challengeSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
-}, { timestamps: true });
+}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 
 challengeSchema.index({ level: 1 }, { unique: true, sparse: true });
 challengeSchema.index({ order: 1 }, { unique: true, sparse: true });
 
-// Keep secretPassword and secret aligned regardless of which field code writes to
-challengeSchema.pre('save', function(next) {
-  if (!this.secretPassword && this.secret) this.secretPassword = this.secret;
-  if (!this.secret && this.secretPassword) this.secret = this.secretPassword;
-  if (!this.level && this.order) this.level = this.order;
-  if (!this.order && this.level) this.order = this.level;
-  next();
-});
 
 module.exports = mongoose.model('Challenge', challengeSchema);

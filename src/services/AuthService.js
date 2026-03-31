@@ -1,27 +1,38 @@
 const jwt = require('jsonwebtoken');
 const { getJwtSecret } = require('../config/runtime');
-const {
-  createUser,
-  findUserByEmail,
-  findUserById,
-  verifyPassword,
-  sanitizeUser,
-} = require('../store/userStore');
+const User = require('../models/User');
+
+function sanitizeUser(user) {
+  const obj = user.toObject();
+  delete obj.passwordHash;
+  return obj;
+}
 
 class AuthService {
   static async register(username, email, password) {
-    return createUser({ username, email, password });
+    try {
+      const user = new User({ username, email, passwordHash: password });
+      await user.save();
+      return sanitizeUser(user);
+    } catch (err) {
+      if (err.code === 11000) {
+        const dupErr = new Error('User already exists');
+        dupErr.statusCode = 409;
+        throw dupErr;
+      }
+      throw err;
+    }
   }
 
   static async login(email, password) {
-    const user = findUserByEmail(email);
+    const user = await User.findOne({ email: String(email || '').trim().toLowerCase() });
     if (!user) {
       const err = new Error('Invalid email or password');
       err.statusCode = 401;
       throw err;
     }
 
-    const isPasswordValid = await verifyPassword(user, password);
+    const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       const err = new Error('Invalid email or password');
       err.statusCode = 401;
@@ -30,7 +41,7 @@ class AuthService {
 
     const safeUser = sanitizeUser(user);
     const token = jwt.sign(
-      { id: safeUser.id, username: safeUser.username, email: safeUser.email },
+      { id: user._id, username: user.username, email: user.email },
       getJwtSecret(),
       { expiresIn: '7d' }
     );
@@ -42,8 +53,8 @@ class AuthService {
     return jwt.verify(token, getJwtSecret());
   }
 
-  static getProfile(userId) {
-    const user = findUserById(userId);
+  static async getProfile(userId) {
+    const user = await User.findById(userId);
     return user ? sanitizeUser(user) : null;
   }
 }

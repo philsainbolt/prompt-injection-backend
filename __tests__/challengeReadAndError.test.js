@@ -1,8 +1,7 @@
 const request = require('supertest');
 const app = require('../src/server');
 const errorHandler = require('../src/middleware/errorHandler');
-const { resetUsers } = require('../src/store/userStore');
-const { resetStore } = require('../src/store/gameStore');
+const { connectDB, clearDB, closeDB } = require('./helpers/dbSetup');
 
 async function authHeader() {
   await request(app).post('/api/auth/register').send({
@@ -20,10 +19,9 @@ async function authHeader() {
 }
 
 describe('Challenge read endpoints', () => {
-  beforeEach(() => {
-    resetUsers();
-    resetStore();
-  });
+  beforeAll(connectDB);
+  afterEach(clearDB);
+  afterAll(closeDB);
 
   it('GET /api/challenges returns metadata without secret_password', async () => {
     const headers = await authHeader();

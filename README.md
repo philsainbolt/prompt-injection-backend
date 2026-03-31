@@ -1,425 +1,265 @@
-# You Shall Not Inject — Backend API
+# You Shall Not Inject -- Backend API
 
-A secure, production-ready backend service for teaching prompt injection defense through interactive challenges. Built with Node.js, Express, MongoDB, and JWT authentication.
+REST API for a prompt injection learning platform. Users register, log in, and work through 5 progressive challenges where they try to trick an LLM into revealing a secret password. The backend handles auth, challenge management, prompt submission, LLM evaluation, and progress tracking.
 
-## Overview
-
-This API powers the prompt injection learning platform, managing user authentication, challenge progression, and submission tracking. The backend enforces strict security guardrails to prevent prompt leakage and unauthorized access.
+**Live:** https://prompt-injection-backend.fly.dev
 
 ## Features
 
-- **User Authentication** — JWT-based signup/login with bcrypt password hashing
-- **Challenge Management** — Five progressive levels teaching prompt injection techniques
-- **Progress Tracking** — Persistent user progress with hint usage limits
-- **Submission Validation** — Server-side regex matching for challenge answers
-- **Security Hardening** — No prompt/secret leakage in responses, admin-only endpoints, input validation
-- **Testing Ready** — E2E mode for automated testing without JWT secrets
+- JWT authentication with bcrypt password hashing
+- 5 challenges seeded on first boot, each with a hidden system prompt and secret password
+- Prompt submission pipeline: user prompt -> LLM adapter -> secret detection -> pass/fail verdict
+- Sequential progress gating (beat level N before unlocking N+1)
+- Admin-only challenge CRUD and progress override
+- Sensitive fields (`systemPrompt`, `secret`, `secretPassword`) stripped from all public responses
+- E2E test mode with deterministic LLM responses (no external API calls)
+- Input validation on every route via express-validator
+- Centralized error handling
 
 ## Tech Stack
 
-- **Runtime:** Node.js (v18+)
-- **Framework:** Express.js
-- **Database:** MongoDB with Mongoose ODM
-- **Authentication:** JWT (jsonwebtoken) + bcrypt
-- **Validation:** Express middleware + Mongoose schema validation
-- **Testing:** API testing via Postman/Insomnia
-- **Environment:** dotenv for config management
+- **Runtime:** Node.js 18
+- **Framework:** Express 4
+- **Database:** MongoDB with Mongoose 7
+- **Auth:** jsonwebtoken + bcryptjs
+- **Validation:** express-validator
+- **Testing:** Jest + Supertest + mongodb-memory-server
+- **Dev tooling:** nodemon
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js v18+
-- MongoDB local instance or Atlas URI
-- `.env` file with required variables
+- Node.js 18+
+- MongoDB (local or Atlas)
 
-### Installation
+### Environment Variables
 
-```bash
-cd backend
-npm install
-```
-
-### Environment Setup
-
-Create a `.env` file in the `backend/` directory:
+Create a `.env` file in the project root:
 
 ```env
-# Server
-PORT=3000
+PORT=5000
 NODE_ENV=development
-
-# Database
 MONGODB_URI=mongodb://localhost:27017/prompt-injection
-# OR for Atlas:
-# MONGODB_URI=mongodb+srv://user:password@cluster.mongodb.net/prompt-injection
-
-# JWT
-JWT_SECRET=your_very_secure_secret_key_min_32_chars_recommended
-
-# E2E Testing (optional, leave unset for production)
+JWT_SECRET=your_jwt_secret_key_here
+ADMIN_EMAILS=admin@example.com
 E2E_MODE=false
 ```
 
-**Important:** Outside E2E_MODE, JWT_SECRET is required and validation is enforced at runtime.
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PORT` | No | `5000` | Server port |
+| `NODE_ENV` | No | - | `development` or `production` |
+| `MONGODB_URI` | Yes | `mongodb://localhost:27017/prompt-injection` | MongoDB connection string |
+| `JWT_SECRET` | Yes* | - | Signing key for JWTs. *Not required when `E2E_MODE=true` (falls back to `"secret"`) |
+| `ADMIN_EMAILS` | No | - | Comma-separated list of emails with admin access |
+| `E2E_MODE` | No | `false` | Enables deterministic LLM responses and bypasses admin checks for testing |
 
-### Running the Server
+### Install and Run
 
 ```bash
-# Development mode (auto-reload with nodemon)
-npm run dev
-
-# Production mode
-npm start
+npm install
+npm run dev     # nodemon, auto-reload
+npm start       # production
 ```
 
-Server runs on `http://localhost:3000` by default.
+Server starts on `http://localhost:5000` by default.
 
-## API Routes
+On first boot, the 5 challenges are automatically seeded into MongoDB if the collection is empty.
 
-### Authentication
+## API Endpoints
 
-#### Sign Up
-```
-POST /api/auth/signup
-Content-Type: application/json
+All endpoints are prefixed with `/api`. Auth-required routes expect `Authorization: Bearer <token>`.
 
-{
-  "email": "user@example.com",
-  "password": "securepassword"
-}
+### Health
 
-Response: 201
-{
-  "token": "eyJhbGc...",
-  "user": { "id": "...", "email": "user@example.com", "progressLevel": 0 }
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/health` | No | Returns `{ status: "ok", e2eMode: bool }` |
 
-#### Login
-```
-POST /api/auth/login
-Content-Type: application/json
+### Auth (`/api/auth`)
 
-{
-  "email": "user@example.com",
-  "password": "securepassword"
-}
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/auth/register` | No | Create account. Body: `{ username, email, password }`. Returns `{ user, message }` |
+| POST | `/api/auth/login` | No | Log in. Body: `{ email, password }`. Returns `{ user, token }` |
+| POST | `/api/auth/logout` | Yes | No-op server-side (JWT is stateless). Returns `{ message }` |
 
-Response: 200
-{
-  "token": "eyJhbGc...",
-  "user": { "id": "...", "email": "user@example.com", "progressLevel": 1 }
-}
-```
+Registration requires `username` (min 3 chars), valid `email`, and `password` (min 6 chars).
 
-#### Logout
-```
-POST /api/auth/logout
-Authorization: Bearer <token>
+### Challenges (`/api/challenges`)
 
-Response: 200
-{ "message": "Logged out successfully" }
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/challenges` | Yes | List all challenges (sensitive fields stripped), sorted by level |
+| GET | `/api/challenges/:id` | Yes | Get single challenge by MongoDB ID |
+| POST | `/api/challenges` | Admin | Create challenge. Body: `{ title, description, systemPrompt, secretPassword, level }` |
+| PUT | `/api/challenges/:id` | Admin | Update challenge fields |
+| DELETE | `/api/challenges/:id` | Admin | Delete challenge |
+| POST | `/api/challenges/:id/submit` | Yes | Submit a prompt attempt. Body: `{ userPrompt }` (or `{ prompt }`) |
 
-### Challenges
-
-#### Get All Challenges
-```
-GET /api/challenges
-
-Response: 200
-[
-  {
-    "id": "...",
-    "level": 1,
-    "title": "The Encoding Quest",
-    "description": "...",
-    "explanation": "..."
-  },
-  ...
-]
-```
-
-**Note:** Challenge responses do NOT include `systemPrompt` or secret fields.
-
-#### Get Single Challenge
-```
-GET /api/challenges/:id
-Authorization: Bearer <token>
-
-Response: 200
-{
-  "id": "...",
-  "level": 1,
-  "title": "...",
-  "description": "...",
-  "explanation": "..."
-}
-```
-
-#### Create Challenge (Admin Only)
-```
-POST /api/challenges
-Authorization: Bearer <admin_token>
-Content-Type: application/json
-
-{
-  "level": 1,
-  "title": "The Encoding Quest",
-  "description": "Learn to encode your prompt...",
-  "systemPrompt": "You are a security trainer...",
-  "secretPassword": "base64_encoded",
-  "explanation": "The key was to use base64 encoding..."
-}
-
-Response: 201
-{ "id": "...", "level": 1, ... }
-```
-
-#### Update Challenge (Admin Only)
-```
-PUT /api/challenges/:id
-Authorization: Bearer <admin_token>
-Content-Type: application/json
-
-Response: 200
-{ ... updated challenge ... }
-```
-
-#### Delete Challenge (Admin Only)
-```
-DELETE /api/challenges/:id
-Authorization: Bearer <admin_token>
-
-Response: 200
-{ "message": "Challenge deleted" }
-```
-
-### Submissions
-
-#### Submit Challenge Answer
-```
-POST /api/submissions
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "challengeId": "...",
-  "userPrompt": "base64_encoded"
-}
-
-Response: 200 (success)
-{
-  "success": true,
-  "message": "Challenge passed!",
-  "nextTechniqueHint": "Next level teaches semantic reframing..."
-}
-
-Response: 200 (failure)
-{
-  "success": false,
-  "message": "Incorrect answer. Try again."
-}
-```
-
-### Progress
-
-#### Get User Progress
-```
-GET /api/progress/:userId
-Authorization: Bearer <token>
-
-Response: 200
-{
-  "userId": "...",
-  "progressLevel": 3,
-  "hintsUsed": 1,
-  "completedChallenges": [1, 2, 3],
-  "lastSubmission": "2026-03-26T13:05:00Z"
-}
-```
-
-#### Beat (Progress Update, Admin Only)
-```
-POST /api/progress/beat/:userId
-Authorization: Bearer <admin_token>
-
-Response: 200
-{ "progressLevel": 4, "hintsUsed": 1 }
-```
-
-## Security Design
-
-### What We Protect
-
-- **No Prompt Leakage** — Challenge responses never include `systemPrompt` or secret fields
-- **Admin Endpoints** — Challenge CRUD and progress reset require admin auth
-- **Input Validation** — All routes validate email format, password strength, and payload shape
-- **Password Hashing** — bcrypt with 10 rounds (non-reversible)
-- **JWT Secret** — Enforced outside E2E_MODE; required in `.env` for production
-
-### E2E Mode
-
-For automated testing, set `E2E_MODE=true` in `.env` to bypass JWT secret requirement. Never use in production.
-
-### Error Handling
-
-All errors return centralized, safe messages:
+**Submit response shape:**
 
 ```json
 {
-  "error": "User-friendly message",
-  "status": 400
+  "success": true,
+  "pass": true,
+  "response": "LLM output text",
+  "hint": "Try reframing your request...",
+  "submissionId": "...",
+  "progress": { "beaten": [1, 2], "beatenLevels": [1, 2], "currentLevel": 3 }
 }
 ```
 
-Sensitive details (stack traces, database errors) are logged but never exposed to clients.
+`hint` is included only on failure. `progress` is included only on success.
 
-## Database Schema
+### Progress (`/api/progress`)
 
-### User Model
-```javascript
-{
-  _id: ObjectId,
-  email: String (unique, lowercase),
-  passwordHash: String (bcrypt),
-  progressLevel: Number (0-5),
-  hintsUsed: Number (0-3),
-  createdAt: Date,
-  updatedAt: Date
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/progress` | Yes | Get current user's progress: `{ beaten, beatenLevels, currentLevel, progressLevel }` |
+| POST | `/api/progress/beat/:id` | Admin | Force-mark a level as beaten (`:id` is the level number, not a Mongo ID) |
 
-### Challenge Model
-```javascript
-{
-  _id: ObjectId,
-  level: Number (1-5, unique),
-  title: String,
-  description: String,
-  systemPrompt: String, // NOT returned in API responses
-  secretPassword: String, // NOT returned in API responses
-  explanation: String,
-  nextTechniqueHint: String,
-  createdAt: Date
-}
-```
+### Users (`/api/users`)
 
-### Submission Model
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId (ref: User),
-  challengeId: ObjectId (ref: Challenge),
-  userPrompt: String,
-  llmResponse: String,
-  success: Boolean,
-  createdAt: Date
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/users/profile` | Yes | Get current user's profile (password hash excluded) |
 
-### Progress Model
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId (ref: User, unique),
-  progressLevel: Number,
-  hintsUsed: Number,
-  completedChallenges: [ObjectId],
-  lastSubmission: Date
-}
-```
+### Submissions (`/api/submissions`)
+
+All submission routes require auth. Users can only access their own submissions.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/submissions` | Yes | List current user's submissions (newest first) |
+| GET | `/api/submissions/:id` | Yes | Get single submission |
+| PUT | `/api/submissions/:id` | Yes | Update `userPrompt` on a submission |
+| DELETE | `/api/submissions/:id` | Yes | Delete a submission (returns 204) |
+
+## Database Models
+
+### User
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `username` | String | Unique, min 3 chars |
+| `email` | String | Unique, lowercase |
+| `passwordHash` | String | bcrypt, 10 salt rounds |
+| `progressLevel` | Number | 0-10, default 0 |
+| `hintsUsed` | Number | 0-3, default 0 |
+| `beatenLevels` | [Number] | Array of beaten level numbers |
+| `createdAt` / `updatedAt` | Date | Mongoose timestamps |
+
+### Challenge
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `level` | Number | 1-10, unique index |
+| `title` | String | Required |
+| `description` | String | Required, user-facing |
+| `systemPrompt` | String | Required, never exposed in API responses |
+| `secretPassword` | String | Never exposed in API responses |
+| `secret` | String | Legacy alias for secretPassword |
+| `technique` | String | e.g. "basic injection", "narrative manipulation" |
+| `difficulty` | String | beginner / intermediate / advanced |
+| `explanation` | String | Required |
+| `order` | Number | Sort order |
+
+### Submission
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `userId` | ObjectId | Ref: User |
+| `challengeId` | ObjectId | Ref: Challenge |
+| `userPrompt` | String | The injection attempt |
+| `llmResponse` | String | What the LLM returned |
+| `success` | Boolean | Whether the secret was found in the response |
+| `createdAt` / `updatedAt` | Date | Mongoose timestamps |
 
 ## Testing
 
-### Manual Testing (Postman/Insomnia)
+Tests use Jest with mongodb-memory-server (no real MongoDB needed).
 
-1. **Sign up** — POST `/api/auth/signup` with email/password
-2. **Login** — POST `/api/auth/login`, copy the returned token
-3. **Set Auth header** — `Authorization: Bearer <token>` for all protected routes
-4. **Get challenges** — GET `/api/challenges`
-5. **Submit answer** — POST `/api/submissions` with `challengeId` and `userPrompt`
-6. **Check progress** — GET `/api/progress/:userId`
-
-### Automated Testing (E2E)
-
-Enable E2E_MODE in `.env`, then run from the frontend directory:
 ```bash
-npm run e2e
+npm test              # single run with coverage
+npm run test:watch    # watch mode
 ```
 
-Frontend Playwright tests exercise the full auth → challenge → submission flow.
+`E2E_MODE=true` is set automatically by the test scripts.
 
-## Code Organization
+**Test files** (`__tests__/`):
 
-```
-backend/
-├── src/
-│   ├── config/
-│   │   ├── db.js              # MongoDB connection
-│   │   └── runtime.js         # JWT secret validation
-│   ├── models/
-│   │   ├── User.js
-│   │   ├── Challenge.js
-│   │   ├── Submission.js
-│   │   └── Progress.js
-│   ├── middleware/
-│   │   ├── auth.js            # JWT verification
-│   │   └── errorHandler.js    # Centralized error handling
-│   ├── routes/
-│   │   ├── auth.js
-│   │   ├── challenges.js
-│   │   ├── submissions.js
-│   │   └── progress.js
-│   ├── services/
-│   │   ├── authService.js     # Password hashing, JWT creation
-│   │   ├── challengeService.js # Challenge logic
-│   │   └── submissionService.js # Answer validation
-│   └── server.js              # Express app entry point
-├── .env.example
-├── .gitignore
-├── package.json
-└── README.md
-```
-
-## Key Design Decisions
-
-### Why Regex for Answer Validation?
-
-We use regex matching (not LLM evaluation) for two reasons:
-1. **Deterministic** — Same answer always produces same result (testable, fair)
-2. **Teachable** — Students learn exact techniques, not vague "good enough" approximations
-
-### Why JWT Over Sessions?
-
-JWT tokens are stateless, making the API scalable and frontend-agnostic. No session store overhead.
-
-### Why Mongoose Over Raw MongoDB?
-
-Mongoose provides:
-- Built-in validation and type safety
-- Middleware hooks for password hashing
-- Relationship management (refs)
-- Clean, readable schema definitions
+| File | Covers |
+|------|--------|
+| `auth.test.js` | Register, login, validation |
+| `logout.test.js` | Logout endpoint |
+| `challengeReadAndError.test.js` | GET challenges, 404s, sensitive field stripping |
+| `challengeAdmin.test.js` | Admin CRUD (create, update, delete) |
+| `challengeSubmit.test.js` | Prompt submission and pass/fail logic |
+| `submissions.test.js` | Submission CRUD, ownership enforcement |
+| `progress.test.js` | Progress read and beat endpoints |
+| `userProfile.test.js` | Profile endpoint |
+| `llmAdapter.test.js` | LLM adapter deterministic/random behavior |
+| `passwordDetection.test.js` | Secret detection utility |
 
 ## Deployment
 
-See the main project README for full deployment steps. Backend can run on any Node.js hosting (Heroku, Render, AWS, Azure, etc.).
+Deployed on Fly.io. The Dockerfile builds a Node 18 Alpine image and exposes port 8080.
 
-Key vars for production:
-- `MONGODB_URI` — Use Atlas or managed Mongo service
-- `JWT_SECRET` — Use a cryptographically secure random string (min 32 chars)
-- `NODE_ENV=production`
+```bash
+fly deploy
+```
 
-## Contributing
+**Required Fly.io secrets:**
 
-Submit feature requests or bug reports via GitHub Issues. Pull requests welcome!
+```bash
+fly secrets set MONGODB_URI="mongodb+srv://..." JWT_SECRET="..." ADMIN_EMAILS="..."
+```
+
+The `fly.toml` is configured for the `cdg` (Paris) region with auto-stop/auto-start machines.
+
+## Project Structure
+
+```
+src/
+  server.js               # Express app, route mounting, DB connect, seed
+  config/
+    challenges.js          # 5 challenge definitions (seed data)
+    runtime.js             # JWT secret, E2E mode, admin email helpers
+    seedChallenges.js      # Inserts challenges on first boot
+  controllers/
+    AuthController.js      # Register, login, logout handlers
+    ChallengeController.js # CRUD + submit attempt handler
+    progressController.js  # Progress read + admin beat handler
+  middleware/
+    authMiddleware.js      # JWT verification, sets req.userId
+    adminMiddleware.js     # Admin email check (bypassed in E2E mode)
+    errorHandler.js        # Centralized error responses
+    validate.js            # express-validator result check
+    validators.js          # Validation rule sets for each route
+  models/
+    User.js                # User schema with bcrypt pre-save hook
+    Challenge.js           # Challenge schema with sensitive fields
+    Submission.js          # Submission schema with compound indexes
+  routes/
+    authRoutes.js          # /api/auth/*
+    challengeRoutes.js     # /api/challenges/*
+    progressRoutes.js      # /api/progress/*
+    submissionRoutes.js    # /api/submissions/*
+    userRoutes.js          # /api/users/*
+  services/
+    AuthService.js         # Registration, login, token, profile logic
+    llmAdapter.js          # LLM response generation (deterministic in E2E mode)
+  utils/
+    passwordDetection.js   # Checks if LLM response contains the secret
+    progressCalc.js        # Calculates next unlocked level from beaten array
+```
+
+## Credits
+
+Built by Phillip Hinson.
 
 ## License
 
-MIT License — See LICENSE file in the project root.
-
-## Support
-
-Questions? Check the main project README or open an issue on GitHub.
+MIT

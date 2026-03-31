@@ -1,13 +1,11 @@
 const request = require('supertest');
 const app = require('../src/server');
-const { resetUsers } = require('../src/store/userStore');
-const { resetStore } = require('../src/store/gameStore');
+const { connectDB, clearDB, closeDB } = require('./helpers/dbSetup');
 
 describe('Auth flow', () => {
-  beforeEach(() => {
-    resetUsers();
-    resetStore();
-  });
+  beforeAll(connectDB);
+  afterEach(clearDB);
+  afterAll(closeDB);
 
   it('registers and logs in user with jwt token', async () => {
     const register = await request(app).post('/api/auth/register').send({

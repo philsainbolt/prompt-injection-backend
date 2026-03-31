@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/authRoutes');
 const challengeRoutes = require('./routes/challengeRoutes');
@@ -10,6 +11,7 @@ const userRoutes = require('./routes/userRoutes');
 const submissionRoutes = require('./routes/submissionRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const { getJwtSecret, isE2EModeEnabled } = require('./config/runtime');
+const seedChallenges = require('./config/seedChallenges');
 
 const app = express();
 
@@ -34,9 +36,20 @@ app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/prompt-injection';
+
+  mongoose.connect(MONGODB_URI)
+    .then(async () => {
+      console.log('Connected to MongoDB');
+      await seedChallenges();
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error('MongoDB connection error:', err.message);
+      process.exit(1);
+    });
 }
 
 module.exports = app;

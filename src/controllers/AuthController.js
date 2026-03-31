@@ -30,6 +30,10 @@ class AuthController {
       next(err);
     }
   }
+
+  static async logout(req, res) {
+    res.json({ message: 'Logged out successfully' });
+  }
 }
 
 module.exports = AuthController;
