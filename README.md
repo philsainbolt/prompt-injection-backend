@@ -1,10 +1,10 @@
-![Node.js](https://img.shields.io/badge/Node.js-18-339933?logo=node.js&logoColor=white) ![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white) ![Fly.io](https://img.shields.io/badge/Fly.io-Deployed-8B5CF6?logo=fly.io&logoColor=white) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Node.js](https://img.shields.io/badge/Node.js-18-339933?logo=node.js&logoColor=white) ![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white) ![Render](https://img.shields.io/badge/Render-Deployed-46E3B7?logo=render&logoColor=white) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 # You Shall Not Inject -- Backend API
 
 REST API for a prompt injection learning platform. Users register, log in, and work through 5 progressive challenges where they try to trick an LLM into revealing a secret password. The backend handles auth, challenge management, prompt submission, LLM evaluation, and progress tracking.
 
-**Live:** https://prompt-injection-backend.fly.dev
+**Live:** https://prompt-injection-backend.onrender.com
 
 ## Features
 
@@ -207,19 +207,18 @@ npm run test:watch    # watch mode
 
 ## Deployment
 
-Deployed on Fly.io. The Dockerfile builds a Node 18 Alpine image and exposes port 8080.
+Deployed on **Render** as a Web Service. The Dockerfile builds a Node 18 Alpine image.
 
-```bash
-fly deploy
-```
+**Required Render environment variables:**
 
-**Required Fly.io secrets:**
+| Variable | Description |
+|----------|-------------|
+| `MONGODB_URI` | MongoDB Atlas connection string |
+| `JWT_SECRET` | Signing key for JWTs |
+| `ADMIN_EMAILS` | Comma-separated admin emails |
+| `NODE_ENV` | `production` |
 
-```bash
-fly secrets set MONGODB_URI="mongodb+srv://..." JWT_SECRET="..." ADMIN_EMAILS="..."
-```
-
-The `fly.toml` is configured for the `cdg` (Paris) region with auto-stop/auto-start machines.
+The frontend at `https://you-shall-not-inject.netlify.app` proxies `/api/*` requests to this service.
 
 ## Project Structure
 
